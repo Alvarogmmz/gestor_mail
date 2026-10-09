@@ -3,9 +3,10 @@ import logging
 import sys
 from pathlib import Path
 
-from .agents.fake_agent import FakeAgent
+from .agents.mail_agent import MailAgent
+from .agents.anthropic_client import AnthropicClient
 from .clients.imap_client import ImapClient
-from .config import get_imap_password, load_config
+from .config import get_imap_password, load_config, get_lmm_key
 from .services.mail_service import MailHelper
 from .storage.state_repository import StateRepository
 from .workflow.inbox_agent_workflow import InboxAgentWorkflow
@@ -43,7 +44,7 @@ def main():
     state_repository = StateRepository(Path(config.workflow.state_path))
 
     client = ImapClient(config.imap, get_imap_password)
-    decider = FakeAgent()
+    decider = MailAgent(AnthropicClient(config.llm, get_lmm_key), )
     try:
         with client:
             service = MailHelper(client, sender=config.imap.user)

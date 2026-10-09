@@ -1,36 +1,58 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Self
 
-from anthropic import Anthropic
+from anthropic import Anthropic, APIError
+from anthropic.types import (
+    MessageParam,
+    TextBlockParam,
+    ToolChoiceToolParam,
+    ToolParam,
+)
 
 from ..config import LlmConfig
+from .mail_agent import LlmError, LlmInvalidResponseError
 
 
 class AnthropicClient:
-    """LLM client backed by the Anthropic API.
-
-        Can be used as a context manager, which creates the SDK client on entry
-        and closes it on exit.
-
-        Args:
-            config: Model and request settings.
-            api_key_provider: Function that returns the API key. It is called
-                only when the SDK client is created.
-        """
-    def __init__(self, llmconfig: LlmConfig, api_provider: Callable[[], str]):
+    def __init__(self, llmconfig: LlmConfig, api_key_provider: Callable[[], str]):
+        
         self._config = llmconfig
-        self._client: Anthropic | None = None
-        self._api_provider = api_provider
+        self._api_key_provider = api_key_provider
 
-    def __enter__(self) -> Self:
-        self.connect()
+        self._client: Anthropic | None = None
+
+    def __enter__(self) -> Self | None:
+        self._get_client()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        self.disconnect()
+        self._disconnect()
 
-#region "Public methods"
-    def connect(self):
+    def generate(self, message: str, tools: dict, tool_choice: dict, system: str):
+        client = self._require_client()
+
+        messages_param: Iterable[MessageParam] = [MessageParam(role="user", content=message)]
+        tools_param: Iterable[ToolParam] = [ToolParam(**tools)]
+        tool_choice_param: ToolChoiceToolParam = ToolChoiceToolParam(**tool_choice)
+        system_param: Iterable[TextBlockParam] = [TextBlockParam(type="text", text=system)]
+
+        try:
+            response = client.messages.create(model=self._config.model, max_tokens=self._config.max_token,
+                            messages=messages_param, tools=tools_param, tool_choice=tool_choice_param,
+                            system=system_param)
+        except APIError as e:
+            raise LlmError(f"Anthropic API request failed: {e}") from e
+        
+        if response.stop_reason == "max_tokens":
+            raise LlmInvalidResponseError(
+                "Response was truncated (max_tokens reached)."
+            )
+
+        for block in response.content:
+            if block.type == "tool_use":
+                return block.input
+
+    def _get_client(self):
         """Create the SDK client. No request is sent to the API yet.
 
         Does nothing if the client already exists.
@@ -40,14 +62,16 @@ class AnthropicClient:
         """
         if self._client is not None:
             return
-        self._client = Anthropic(api_key=self._api_provider())
+        self._client = Anthropic(api_key=self._api_key_provider())
 
-    def disconnect(self):
+    def _disconnect(self):
         if self._client is None:
             return
         self._client.close()
         self._client = None
 
-    def create(self):
-        ...
-#endregion
+    def _require_client(self):
+
+        if self._client is None:
+            raise RuntimeError("Anthropic client is not connected. Call connect() first.")
+        return self._client
