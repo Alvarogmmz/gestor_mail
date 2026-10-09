@@ -10,7 +10,7 @@ from anthropic.types import (
 )
 
 from ..config import LlmConfig
-from .mail_agent import LlmError, LlmInvalidResponseError
+from ..errors import LlmError, LlmInvalidResponseError
 
 
 class AnthropicClient:
