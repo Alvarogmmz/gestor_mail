@@ -1,0 +1,1 @@
+"""Module that contains the Folder class."""

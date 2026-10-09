@@ -1,0 +1,9 @@
+
+class Prompt:
+    ...
+
+class LlmClient:
+    ...
+
+class LlmError:
+    ...

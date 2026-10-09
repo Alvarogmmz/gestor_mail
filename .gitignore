@@ -1,0 +1,99 @@
+# ==============================
+
+# Python
+
+# ==============================
+
+# Archivos compilados y caché
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+
+venv/
+.venv/
+env/
+ENV/
+
+# Distribución y paquetes generados
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Herramientas de testing y cobertura
+
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking y linters
+
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# ==============================
+
+# Variables de entorno y secretos
+
+# ==============================
+
+.env
+.env.*
+!.env.example
+
+# Claves y certificados privados
+
+*.pem
+*.key
+
+# ==============================
+
+# Visual Studio Code
+
+# ==============================
+
+.vscode/
+
+# ==============================
+
+# Sistema operativo
+
+# ==============================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==============================
+
+# Logs y archivos temporales
+
+# ==============================
+
+*.log
+*.tmp
+*.bak
+
+# ==============================
+
+# Jupyter Notebook
+
+# ==============================
+
+.ipynb_checkpoints/
+
+# ==============================
+
+# Selected modules
+
+# ==============================
+
+src/gestor_mail/data
+src/gestor_mail/agents/fake_agent.py
