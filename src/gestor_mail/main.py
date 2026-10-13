@@ -1,3 +1,4 @@
+"""main module"""
 
 import logging
 import sys
@@ -27,7 +28,7 @@ def configure_logging():
     )
 
 def main():
-
+    """Main function"""
     configure_logging()
 
     try:
