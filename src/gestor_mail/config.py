@@ -42,12 +42,20 @@ class LlmConfig:
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    """Settings for the mail agent."""
+    system_prompt: str
+    max_body_chars: int
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """All the application settings."""
 
     imap: ImapConfig
     workflow: WorkFlowConfig
     llm: LlmConfig
+    agent: AgentConfig
     log_level: str
 
 
@@ -80,12 +88,23 @@ def load_config() -> AppConfig:
     )
 
     llm = LlmConfig(
-        url=os.environ.get("LLM_API_KEY", ""),
+        url=os.environ.get("LLM_URL", ""),
         model=os.environ.get("LLM_MODEL", ""),
         max_token=_get_int("LLM_MAX_TOKEN", 8192)
     )
 
-    return AppConfig(imap=imap, workflow=workflow, llm=llm, log_level=_get_log_level("LOG_LEVEL", default="INFO"))
+    agent = AgentConfig(
+        system_prompt=_read_required_file("RULES_PATH", default=Path("rules.md")),
+        max_body_chars=_get_int("MAX_BODY_CHARS", default=8000),
+    )
+
+    return AppConfig(
+        imap=imap,
+        workflow=workflow,
+        llm=llm,
+        agent=agent,
+        log_level=_get_log_level("LOG_LEVEL", default="INFO"),
+    )
 
 def get_imap_password() -> str:
     """Return the IMAP password. Called only when connecting.
@@ -145,6 +164,21 @@ def _get_list(name: str) -> tuple[str, ...]:
     """Return a comma-separated variable as a tuple, ignoring empty items."""
     raw = os.environ.get(name, "")
     return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _read_required_file(name: str, default: Path) -> str:
+    """Return the content of the file a variable points to, or of the default.
+
+    The file must exist and must not be empty.
+    """
+    raw = os.environ.get(name, "").strip()
+    path = Path(raw) if raw else default
+    if not path.is_file():
+        raise RuntimeError(f"{name}: file not found: {path.resolve()}")
+    content = path.read_text(encoding="utf-8").strip()
+    if not content:
+        raise RuntimeError(f"{name}: file is empty: {path.resolve()}")
+    return content
 
 
 def _require(name: str) -> str:

@@ -320,7 +320,11 @@ class MailHelper:
 
 
     def fetch_new(
-        self, folder: str, after_uid: int, limit: int | None = None
+        self,
+        folder: str,
+        after_uid: int,
+        limit: int | None = None,
+        unread_only: bool = False,
     ) -> list[Mail]:
         """Get the mails that arrived after a given UID, oldest first.
 
@@ -333,6 +337,8 @@ class MailHelper:
             after_uid: Only mails with a higher UID are returned.
             limit: Maximum number of mails to return. Defaults to the
                 service's default limit.
+            unread_only: If True, mails already read are left out and do not
+                count towards the limit.
 
         Returns:
             The new mails, oldest first, up to the limit.
@@ -348,7 +354,10 @@ class MailHelper:
 
         # "UID n:*" always includes the highest UID in the folder, even when it
         # is lower than n, so the result must be filtered.
-        uids = self._client.search(f"UID {after_uid + 1}:*")
+        criteria = [f"UID {after_uid + 1}:*"]
+        if unread_only:
+            criteria.append("UNSEEN")
+        uids = self._client.search(*criteria)
         new_uids = sorted(uid for uid in uids if uid > after_uid)[:limit]
 
         mails = self._client.fetch(new_uids, headers_only=False)

@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class MailDecider(Protocol):
-
-    def __init__(self):
-        ...
+    """Anything able to decide what to do with a mail."""
 
     def decide(self, mail: Mail) -> Decision:
         ...
@@ -76,8 +74,15 @@ class InboxAgentWorkflow:
             self._start_from_now(folder, uid_validity)
             return summary
 
-        mails = self.service.fetch_new(folder, after_uid=state.last_uid, limit=self.config.batch_size)
-        logger.info("Found %d new mails in %s", len(mails), folder)
+        # Mails the user has already read are left alone: the user has
+        # already dealt with them.
+        mails = self.service.fetch_new(
+            folder,
+            after_uid=state.last_uid,
+            limit=self.config.batch_size,
+            unread_only=True,
+        )
+        logger.info("Found %d new unread mails in %s", len(mails), folder)
 
         for mail in mails:
             decision = self._validate(folder, self.decider.decide(mail))

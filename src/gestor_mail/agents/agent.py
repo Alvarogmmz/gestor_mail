@@ -24,7 +24,7 @@ class AgentHelper:
 
     Args:
         llm: Client used to talk to the language model.
-        rules: The user's preferences, in natural language.
+        system_prompt: Instructions for the model, the same for every mail.
         allowed_folders: Folders the model can move mails to.
         max_body_chars: Maximum length of the body sent to the model.
     """
@@ -32,12 +32,12 @@ class AgentHelper:
     def __init__(
         self,
         llm: LlmClient,
-        rules: str,
+        system_prompt: str,
         allowed_folders: tuple[str, ...],
         max_body_chars: int,
     ):
         self._llm = llm
-        self._rules = rules
+        self._system = system_prompt
         self._allowed_folders = allowed_folders
         self._max_body_chars = max_body_chars
 
@@ -62,9 +62,7 @@ class AgentHelper:
         Raises:
             LlmError: If the request to the model fails.
         """
-        prompt = Prompt.from_mail(
-            mail, self._rules, self._actions, self._allowed_folders, self._max_body_chars
-        )
+        prompt = Prompt.from_mail(mail, self._system, self._max_body_chars)
 
         try:
             answer = self._llm.generate_structured(prompt, self._schema)

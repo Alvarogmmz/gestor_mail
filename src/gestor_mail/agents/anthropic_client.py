@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterable
-from typing import Self
+from typing import Any, Self
 
 from anthropic import Anthropic, APIError
 from anthropic.types import (
@@ -11,6 +11,9 @@ from anthropic.types import (
 
 from ..config import LlmConfig
 from ..errors import LlmError, LlmInvalidResponseError
+from ..models.prompt import Prompt
+
+_TOOL_NAME = "record_decision"
 
 
 class AnthropicClient:
@@ -51,6 +54,27 @@ class AnthropicClient:
         for block in response.content:
             if block.type == "tool_use":
                 return block.input
+
+    def generate_structured(self, prompt: Prompt, schema: dict[str, Any]) -> dict[str, Any]:
+        """Ask the model for an answer that follows the given JSON schema.
+
+        Raises:
+            LlmError: If the request to the API fails.
+            LlmInvalidResponseError: If the model does not answer with the tool.
+        """
+        answer = self.generate(
+            message=prompt.user,
+            tools={
+                "name": _TOOL_NAME,
+                "description": "Record the decision taken for the email.",
+                "input_schema": schema,
+            },
+            tool_choice={"type": "tool", "name": _TOOL_NAME},
+            system=prompt.system,
+        )
+        if not isinstance(answer, dict):
+            raise LlmInvalidResponseError("The model did not answer with the tool.")
+        return answer
 
     def _get_client(self):
         """Create the SDK client. No request is sent to the API yet.
