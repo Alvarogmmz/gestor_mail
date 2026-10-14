@@ -1,8 +1,10 @@
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
+from ..agents.decision import PastDecision
 from .mail import Mail
 
 #region "Prompt"
@@ -14,24 +16,43 @@ class Prompt:
     user: str
 
     @classmethod
-    def from_mail(cls, mail: Mail, system: str, max_body_chars: int) -> "Prompt":
+    def from_mail(
+        cls,
+        mail: Mail,
+        system: str,
+        max_body_chars: int,
+        past_decisions: Sequence[PastDecision] = (),
+    ) -> "Prompt":
         """Build the prompt to decide what to do with a mail.
 
         Args:
             mail: The mail to analyse.
             system: The system prompt, the same for every mail.
             max_body_chars: Maximum length of the body sent to the model.
+            past_decisions: Decisions taken by the user on similar mails.
 
         Returns:
             The prompt, ready to be sent to any LLM client.
         """
-        return cls(system=system, user=_build_user_message(mail, max_body_chars))
+        user = _build_user_message(mail, max_body_chars, past_decisions)
+        return cls(system=system, user=user)
 
 
-def _build_user_message(mail: Mail, max_body_chars: int) -> str:
-    """Describe a mail as a JSON document for the model."""
-    header = mail.header
+def _build_user_message(
+    mail: Mail, max_body_chars: int, past_decisions: Sequence[PastDecision]
+) -> str:
+    """Describe a mail and the user's past decisions as a JSON document."""
     data = {
+        "email": _describe_mail(mail, max_body_chars),
+        "past_decisions": [_describe_past_decision(past) for past in past_decisions],
+    }
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _describe_mail(mail: Mail, max_body_chars: int) -> dict:
+    """Describe the mail to analyse."""
+    header = mail.header
+    return {
         "from": header.sender,
         "to": header.to,
         "cc": header.cc,
@@ -41,7 +62,19 @@ def _build_user_message(mail: Mail, max_body_chars: int) -> str:
         "attachments": [attachment.filename for attachment in mail.attachments],
         "body": _get_body_text(mail, max_body_chars),
     }
-    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _describe_past_decision(past: PastDecision) -> dict:
+    """Describe a past decision of the user as an example for the model."""
+    data = {
+        "from": past.from_address,
+        "subject": past.subject,
+        "snippet": past.snippet,
+        "user_action": past.action.value,
+    }
+    if past.target_folder:
+        data["target_folder"] = past.target_folder
+    return data
 
 
 def _get_body_text(mail: Mail, max_body_chars: int) -> str:
@@ -53,7 +86,7 @@ def _get_body_text(mail: Mail, max_body_chars: int) -> str:
     if body.text:
         text = body.text
     elif body.html:
-        text = _html_to_text(body.html)
+        text = html_to_text(body.html)
     else:
         return ""
 
@@ -91,7 +124,7 @@ class _HtmlTextExtractor(HTMLParser):
         return "".join(self._parts)
 
 
-def _html_to_text(html: str) -> str:
+def html_to_text(html: str) -> str:
     """Convert HTML to plain text, dropping scripts, styles and empty lines."""
     parser = _HtmlTextExtractor()
     parser.feed(html)
@@ -99,4 +132,4 @@ def _html_to_text(html: str) -> str:
     lines = (line.strip() for line in parser.get_text().splitlines())
     return "\n".join(line for line in lines if line)
 
-#endregion
+#endregion

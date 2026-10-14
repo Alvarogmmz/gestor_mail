@@ -4,7 +4,7 @@ from typing import Any, Protocol
 from ..errors import LlmInvalidResponseError
 from ..models.mail import Mail
 from ..models.prompt import Prompt
-from .decision import Action, Decision, DraftContent
+from .decision import Action, Decision, DraftContent, PastDecision
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,12 @@ class LlmClient(Protocol):
     def generate_structured(
         self, prompt: "Prompt", schema: dict[str, Any]
     ) -> dict[str, Any]:
+        ...
+
+class DecisionHistory(Protocol):
+    """Anything able to find the user's past decisions on similar mails."""
+
+    def find_examples(self, mail: Mail, limit: int) -> list[PastDecision]:
         ...
 
 class AgentHelper:
@@ -27,6 +33,9 @@ class AgentHelper:
         system_prompt: Instructions for the model, the same for every mail.
         allowed_folders: Folders the model can move mails to.
         max_body_chars: Maximum length of the body sent to the model.
+        history: Past decisions of the user, shown to the model as examples.
+            None to decide without examples.
+        max_examples: Maximum number of past decisions sent with each mail.
     """
 
     def __init__(
@@ -35,11 +44,15 @@ class AgentHelper:
         system_prompt: str,
         allowed_folders: tuple[str, ...],
         max_body_chars: int,
+        history: DecisionHistory | None = None,
+        max_examples: int = 5,
     ):
         self._llm = llm
         self._system = system_prompt
         self._allowed_folders = allowed_folders
         self._max_body_chars = max_body_chars
+        self._history = history
+        self._max_examples = max_examples
 
         # Moving is only offered if there is somewhere to move to.
         self._actions = [
@@ -62,7 +75,8 @@ class AgentHelper:
         Raises:
             LlmError: If the request to the model fails.
         """
-        prompt = Prompt.from_mail(mail, self._system, self._max_body_chars)
+        examples = self._find_examples(mail)
+        prompt = Prompt.from_mail(mail, self._system, self._max_body_chars, examples)
 
         try:
             answer = self._llm.generate_structured(prompt, self._schema)
@@ -71,6 +85,33 @@ class AgentHelper:
             return Decision(Action.NONE, reason=f"Invalid answer from the model: {error}")
 
         return self._parse(mail, answer)
+
+    def _find_examples(self, mail: Mail) -> list[PastDecision]:
+        """Return the past decisions to show with a mail.
+
+        The history only helps the model, so if it fails the mail is decided
+        without examples. Examples the model could not repeat (moves to
+        folders that are no longer allowed) are left out.
+        """
+        if self._history is None:
+            return []
+
+        try:
+            examples = self._history.find_examples(mail, self._max_examples)
+        except Exception:
+            logger.warning(
+                "Could not get past decisions for mail UID %s; deciding without them.",
+                mail.uid, exc_info=True,
+            )
+            return []
+
+        usable = [
+            example for example in examples
+            if example.action is not Action.MOVE
+            or example.target_folder in self._allowed_folders
+        ]
+        logger.debug("Mail UID %s: %d past decisions as examples.", mail.uid, len(usable))
+        return usable
 
     def _build_schema(self) -> dict[str, Any]:
         """Build the JSON schema the model's answer must follow."""

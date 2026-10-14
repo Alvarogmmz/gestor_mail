@@ -1,17 +1,23 @@
-"Module that contains the embedding functionalities. """
+"""Module that contains the embedding functionalities."""
 
 import logging
-from collections.abc import Sequence
 from typing import Self
 
-from ollama import Client, EmbedResponse, RequestError
+from ollama import Client, EmbedResponse, RequestError, ResponseError
 
 logger = logging.getLogger(__name__)
 
 class EmbeddingHelper:
+    """Turns texts into embedding vectors with an Ollama model.
 
-    def __init__(self, model):
+    Args:
+        model: Name of the embedding model, e.g. "bge-m3".
+        host: URL of the Ollama server.
+    """
+
+    def __init__(self, model: str, host: str = "http://localhost:11434"):
         self._model = model
+        self._host = host
         self._client: Client | None = None
 
     def __enter__(self)-> Self:
@@ -20,6 +26,11 @@ class EmbeddingHelper:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self._disconnect()
+
+    @property
+    def model(self) -> str:
+        """Name of the model that makes the vectors."""
+        return self._model
 
     @property
     def is_connected(self) -> bool:
@@ -31,7 +42,7 @@ class EmbeddingHelper:
             return
 
         try:
-            self._client = Client('http://localhost:11434')
+            self._client = Client(self._host)
         except Exception:
             logger.exception(
                 "Could not reach the Ollama server."
@@ -56,19 +67,35 @@ class EmbeddingHelper:
                 exc_info=True,
             )
         finally:
-            self._connection = None
-            self._selected_folder = None
-            self._readonly = False
+            self._client = None
 
-    def generate_embedding(self, text: str) -> Sequence[Sequence[float]]:
+    def generate_embedding(self, text: str) -> list[float]:
+        """Return the embedding vector of a text.
+
+        Raises:
+            RuntimeError: If not connected.
+            ValueError: If the text is empty.
+            RequestError, ResponseError, ConnectionError: If Ollama fails,
+                e.g. the model is not installed or the server is not running.
+        """
         connection = self._client
         if connection is None:
-            logger.warning("There is not an istance of the ollama client")
-            return []
+            raise RuntimeError("Not connected to Ollama. Use EmbeddingHelper as a context manager.")
+
+        if not text.strip():
+            raise ValueError("The text is empty, nothing to embed.")
 
         try:
-            embedding: EmbedResponse = connection.embed(model=self._model, input=text)
-            return embedding.embeddings
+            response: EmbedResponse = connection.embed(model=self._model, input=text)
         except RequestError:
             logger.exception("An error ocurred while generating the embedding")
             raise
+        except ResponseError:
+            logger.exception("Ollama could not embed the text with model %s", self._model)
+            raise
+        except ConnectionError:
+            logger.exception("Ollama server not found or is not running.")
+            raise
+
+        # One input text gives exactly one vector.
+        return list(response.embeddings[0])

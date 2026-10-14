@@ -14,31 +14,39 @@ class Header:
     message_id: str | None = None
     to: list[str] = field(default_factory=list)
     cc: list[str] = field(default_factory=list)
+    is_list: bool = False
 
     @classmethod
     def from_message(cls, message: EmailMessage) -> "Header":
+        """Read the header of a mail. Missing headers become empty values.
 
-        #Get the recievers of the mail
-        email_to = []
-        for address in message["To"].addresses:
-            email_to.append(address.display_name)
+        sender, to and cc hold only the addresses (e.g. "a@b.com"), in
+        lowercase, without display names.
+        """
+        senders = _addresses(message, "From")
+        message_id = message["Message-ID"]
+        date_header = message["Date"]
 
-        #Get the cc addresses
-        email_cc = []
-        if message["Cc"] is not None:
-            for address in message["Cc"].addresses:
-                email_cc.append(address.display_name)
-
-        #Creates the Header
-        header = Header(
-            subject=message["Subject"],
-            sender=message["Sender"],
-            date=message["Date"].datetime,
-            message_id=message["Message-ID"],
-            to=email_to,
-            cc=email_cc,
+        return Header(
+            subject=str(message["Subject"] or ""),
+            sender=senders[0] if senders else "",
+            date=getattr(date_header, "datetime", None),
+            message_id=str(message_id).strip() if message_id else None,
+            to=_addresses(message, "To"),
+            cc=_addresses(message, "Cc"),
+            # Mailing lists and newsletters carry one of these headers.
+            is_list=message["List-Id"] is not None
+            or message["List-Unsubscribe"] is not None,
         )
-        return header
+
+
+def _addresses(message: EmailMessage, name: str) -> list[str]:
+    """Return the addresses of an address header, or an empty list."""
+    header = message[name]
+    if header is None:
+        return []
+    addresses = getattr(header, "addresses", ())
+    return [address.addr_spec.lower() for address in addresses if address.addr_spec]
 
 
 @dataclass

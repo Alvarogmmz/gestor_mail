@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 from .agents.agent import AgentHelper
@@ -10,6 +11,9 @@ from .clients.imap_client import ImapClient
 from .config import get_imap_password, get_lmm_key, load_config
 from .services.mail_service import MailHelper
 from .storage.state_repository import StateRepository
+from .vectorial_db.database import VDB
+from .vectorial_db.embedding import EmbeddingHelper
+from .vectorial_db.mail_history import MailHistory
 from .workflow.inbox_agent_workflow import InboxAgentWorkflow
 
 logger = logging.getLogger(__name__)
@@ -44,16 +48,32 @@ def main():
 
     state_repository = StateRepository(Path(config.workflow.state_path))
 
+    database_run = True
+    database_client = VDB("mail_agent")
+    embedder = EmbeddingHelper('bge-m3')
+
+
     client = ImapClient(config.imap, get_imap_password)
     llm = AnthropicClient(config.llm, get_lmm_key)
-    decider = AgentHelper(
-        llm,
-        system_prompt=config.agent.system_prompt,
-        allowed_folders=config.workflow.allowed_folders,
-        max_body_chars=config.agent.max_body_chars,
-    )
     try:
-        with client, llm:
+        with ExitStack() as stack:
+            stack.enter_context(client)
+            stack.enter_context(llm)
+
+            # The history is optional: without it the agent decides without examples.
+            history = None
+            if database_run:
+                stack.enter_context(database_client)
+                stack.enter_context(embedder)
+                history = MailHistory(embedder, database_client)
+
+            decider = AgentHelper(
+                llm,
+                system_prompt=config.agent.system_prompt,
+                allowed_folders=config.workflow.allowed_folders,
+                max_body_chars=config.agent.max_body_chars,
+                history=history,
+            )
             service = MailHelper(client, sender=config.imap.user)
             workflow = InboxAgentWorkflow(
                 service, decider, state_repository, config.workflow

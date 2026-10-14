@@ -49,3 +49,16 @@ class Decision:
             raise ValueError("A create draft decision needs a valid body.")
         if not is_draft and self.draft is not None:
             raise ValueError("Only a create draft decision can have a draft content")
+
+
+@dataclass(frozen=True)
+class PastDecision:
+    """A decision taken in the past on a mail similar to the current one."""
+
+    from_address: str
+    subject: str
+    snippet: str
+    action: Action
+    target_folder: str | None = None
+    # Similarity with the current mail (0-1), or None if found by sender.
+    score: float | None = None
